@@ -1,0 +1,152 @@
+#include <SPI.h>
+#include <MFRC522.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+// --- KONFIGURACJA EKRANU ---
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET    -1 
+#define SCREEN_ADDRESS 0x3C  // Jeśli ekran nie działa, sprawdź czy nie masz 0x3D
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+// --- KONFIGURACJA PINÓW ---
+const int LED_CZERWONY = 6;
+const int LED_ZIELONY = 5;
+const int BUZZER = 3;      
+
+// RFID
+const int RST_PIN = 9;
+const int SS_PIN = 10;
+
+MFRC522 rfid(SS_PIN, RST_PIN);
+
+// --- FUNKCJE DŹWIĘKOWE I EKRANOWE ---
+
+void pokazKomunikat(String linia1, String linia2 = "") {
+  display.clearDisplay();
+  
+  // Nagłówek
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println(F("Kontrola dostepu"));
+  display.drawLine(0, 10, 128, 10, SSD1306_WHITE); 
+  
+  // Główny tekst
+  display.setTextSize(2);
+  display.setCursor(0, 20);
+  display.println(linia1);
+  
+  // Dodatkowy tekst
+  if (linia2 != "") {
+    display.setTextSize(1);
+    display.setCursor(0, 45);
+    display.println(linia2);
+  }
+  
+  display.display();
+}
+
+void dzwiekSukces() {
+  tone(BUZZER, 659); delay(100);
+  tone(BUZZER, 784); delay(100);
+  tone(BUZZER, 1047); delay(100);
+  tone(BUZZER, 1319); delay(200);
+  noTone(BUZZER);
+  digitalWrite(BUZZER, HIGH);
+}
+
+void dzwiekBlad() {
+  tone(BUZZER, 200); delay(250);
+  noTone(BUZZER); delay(50);
+  tone(BUZZER, 150); delay(400);
+  noTone(BUZZER);
+  digitalWrite(BUZZER, HIGH);
+}
+
+void setup() {
+  // Konfiguracja wyjść
+  pinMode(LED_CZERWONY, OUTPUT);
+  pinMode(LED_ZIELONY, OUTPUT);
+  pinMode(BUZZER, OUTPUT);
+  
+  // Stan początkowy
+  digitalWrite(LED_CZERWONY, HIGH);
+  digitalWrite(LED_ZIELONY, HIGH);
+  digitalWrite(BUZZER, HIGH);
+
+  Serial.begin(9600);
+  SPI.begin();
+  rfid.PCD_Init();
+
+  // Start ekranu
+  if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+    Serial.println(F("Błąd SSD1306! Sprawdź kable A4/A5"));
+    for(;;); 
+  }
+  
+  pokazKomunikat("PRZYLOZ", "KARTE...");
+}
+
+void loop() {
+  // Czekaj na nową kartę
+  if (!rfid.PICC_IsNewCardPresent()) return;
+  if (!rfid.PICC_ReadCardSerial()) return;
+
+  // Pobierz ID
+  String content = "";
+  for (byte i = 0; i < rfid.uid.size; i++) {
+    content.concat(String(rfid.uid.uidByte[i] < 0x10 ? " 0" : " "));
+    content.concat(String(rfid.uid.uidByte[i], HEX));
+  }
+  content.toUpperCase();
+  String idKarty = content.substring(1);
+
+  Serial.println("Karta: " + idKarty);
+
+  // --- SPRAWDZANIE UPRAWNIEŃ ---
+
+  if (idKarty == "1B 5B 83 32") {
+    // --- KARTA ZIELONA (DOSTĘP) ---
+    pokazKomunikat("DOSTEP", "PRZYZNANY");
+    
+    // >>> TU JEST ZMIANA: Włączamy efekt błysku <<<
+    display.invertDisplay(true); 
+    
+    digitalWrite(LED_ZIELONY, LOW);
+    dzwiekSukces();
+    
+    delay(2000); // Czas trwania komunikatu i błysku
+    
+    // >>> TU JEST ZMIANA: Wyłączamy efekt błysku <<<
+    display.invertDisplay(false);
+    digitalWrite(LED_ZIELONY, HIGH);
+  }
+  else if (idKarty == "6A 49 1D C1") {
+    // --- KARTA CZERWONA (ZAKAZ) ---
+    pokazKomunikat("ZAKAZ", "DOSTEPU!");
+    
+    digitalWrite(LED_CZERWONY, LOW);
+    dzwiekBlad();
+    delay(2000);
+    digitalWrite(LED_CZERWONY, HIGH);
+  }
+  else {
+    // --- NIEZNANA KARTA ---
+    pokazKomunikat("BLAD", "Nieznane ID");
+    
+    tone(BUZZER, 500, 200);
+    delay(1500);
+    digitalWrite(BUZZER, HIGH);
+  }
+
+  // Powrót do stanu czuwania
+  pokazKomunikat("PRZYLOZ", "KARTE...");
+  
+  // Zakończ sesję z kartą
+  rfid.PICC_HaltA();
+  rfid.PCD_StopCrypto1();
+}
