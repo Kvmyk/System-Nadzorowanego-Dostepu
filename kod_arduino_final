@@ -14,9 +14,9 @@
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 // --- KONFIGURACJA PINÓW ---
-const int LED_CZERWONY = 6;
-const int LED_ZIELONY = 5;
-const int BUZZER = 3;      
+const int LED_CZERWONY = 6;  // PD6
+const int LED_ZIELONY = 5;   // PD5
+const int BUZZER = 3;        // PD3
 
 // RFID
 const int RST_PIN = 9;
@@ -25,8 +25,6 @@ const int SS_PIN = 10;
 MFRC522 rfid(SS_PIN, RST_PIN);
 
 // --- KOMUNIKACJA Z ESP32 ---
-// RX (Arduino) = pin 2, TX (Arduino) = pin 4
-// POŁĄCZ: Arduino pin 4 (TX) → ESP32 pin 16 (RX2)
 SoftwareSerial espSerial(2, 4); 
 
 // --- FUNKCJE DŹWIĘKOWE I EKRANOWE ---
@@ -55,30 +53,28 @@ void dzwiekSukces() {
   tone(BUZZER, 659); delay(100);
   tone(BUZZER, 784); delay(100);
   noTone(BUZZER);
-  digitalWrite(BUZZER, HIGH);
+  PORTD |= (1 << PD3); // Buzzer HIGH
 }
 
 void dzwiekBlad() {
   tone(BUZZER, 200); delay(250);
   noTone(BUZZER);
-  digitalWrite(BUZZER, HIGH);
+  PORTD |= (1 << PD3); // Buzzer HIGH
 }
 
 void setup() {
-  // Konfiguracja wyjść
-  pinMode(LED_CZERWONY, OUTPUT);
-  pinMode(LED_ZIELONY, OUTPUT);
-  pinMode(BUZZER, OUTPUT);
+  // Konfiguracja pinów jako OUTPUT przez rejestry
+  // PD6 (pin 6), PD5 (pin 5), PD3 (pin 3)
+  DDRD |= (1 << DDD6) | (1 << DDD5) | (1 << DDD3);
   
-  digitalWrite(LED_CZERWONY, HIGH);
-  digitalWrite(LED_ZIELONY, HIGH);
-  digitalWrite(BUZZER, HIGH);
+  // Ustaw wszystkie na HIGH (wyłączone)
+  PORTD |= (1 << PD6) | (1 << PD5) | (1 << PD3);
 
   Serial.begin(9600);     
-  delay(100); // WAŻNE! Daj czas na inicjalizację
+  delay(100);
   
   espSerial.begin(9600);  
-  delay(100); // WAŻNE! Daj czas na inicjalizację
+  delay(100);
   
   SPI.begin();
   rfid.PCD_Init();
@@ -121,13 +117,17 @@ void loop() {
     pokazKomunikat("DOSTEP", "PRZYZNANY");
     display.invertDisplay(true); 
     
-    digitalWrite(LED_ZIELONY, LOW);
+    // LED ZIELONY ON (LOW) przez rejestr
+    PORTD &= ~(1 << PD5);
+    
     dzwiekSukces();
     
     delay(2000); 
     
     display.invertDisplay(false);
-    digitalWrite(LED_ZIELONY, HIGH);
+    
+    // LED ZIELONY OFF (HIGH) przez rejestr
+    PORTD |= (1 << PD5);
   }
   else {
     // Wyślij do ESP32
@@ -138,11 +138,15 @@ void loop() {
     // Obsługa lokalna
     pokazKomunikat("ZAKAZ", "DOSTEPU!");
     
-    digitalWrite(LED_CZERWONY, LOW);
+    // LED CZERWONY ON (LOW) przez rejestr
+    PORTD &= ~(1 << PD6);
+    
     dzwiekBlad();
     
     delay(2000);
-    digitalWrite(LED_CZERWONY, HIGH);
+    
+    // LED CZERWONY OFF (HIGH) przez rejestr
+    PORTD |= (1 << PD6);
   }
 
   // Powrót do stanu czuwania
