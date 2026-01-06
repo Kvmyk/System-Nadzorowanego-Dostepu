@@ -1,0 +1,152 @@
+#include <SPI.h>
+#include <MFRC522.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <SoftwareSerial.h>
+
+// --- KONFIGURACJA EKRANU ---
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET    -1 
+#define SCREEN_ADDRESS 0x3C 
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+// --- KONFIGURACJA PINÓW ---
+const int LED_CZERWONY = 6;
+const int LED_ZIELONY = 5;
+const int BUZZER = 3;      
+
+// RFID
+const int RST_PIN = 9;
+const int SS_PIN = 10;
+
+MFRC522 rfid(SS_PIN, RST_PIN);
+
+// --- KOMUNIKACJA Z ESP32 ---
+// RX (Arduino) = pin 2, TX (Arduino) = pin 4
+// POŁĄCZ: Arduino pin 4 (TX) → ESP32 pin 16 (RX2)
+SoftwareSerial espSerial(2, 4); 
+
+// --- FUNKCJE DŹWIĘKOWE I EKRANOWE ---
+
+void pokazKomunikat(String linia1, String linia2 = "") {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println(F("Kontrola dostepu"));
+  display.drawLine(0, 10, 128, 10, SSD1306_WHITE); 
+  
+  display.setTextSize(2);
+  display.setCursor(0, 20);
+  display.println(linia1);
+  
+  if (linia2 != "") {
+    display.setTextSize(1);
+    display.setCursor(0, 45);
+    display.println(linia2);
+  }
+  display.display();
+}
+
+void dzwiekSukces() {
+  tone(BUZZER, 659); delay(100);
+  tone(BUZZER, 784); delay(100);
+  noTone(BUZZER);
+  digitalWrite(BUZZER, HIGH);
+}
+
+void dzwiekBlad() {
+  tone(BUZZER, 200); delay(250);
+  noTone(BUZZER);
+  digitalWrite(BUZZER, HIGH);
+}
+
+void setup() {
+  // Konfiguracja wyjść
+  pinMode(LED_CZERWONY, OUTPUT);
+  pinMode(LED_ZIELONY, OUTPUT);
+  pinMode(BUZZER, OUTPUT);
+  
+  digitalWrite(LED_CZERWONY, HIGH);
+  digitalWrite(LED_ZIELONY, HIGH);
+  digitalWrite(BUZZER, HIGH);
+
+  Serial.begin(9600);     
+  delay(100); // WAŻNE! Daj czas na inicjalizację
+  
+  espSerial.begin(9600);  
+  delay(100); // WAŻNE! Daj czas na inicjalizację
+  
+  SPI.begin();
+  rfid.PCD_Init();
+
+  if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+    Serial.println(F("Błąd SSD1306!"));
+    for(;;); 
+  }
+  
+  Serial.println(F("System gotowy!"));
+  pokazKomunikat("PRZYLOZ", "KARTE...");
+}
+
+void loop() {
+  // Czekaj na nową kartę
+  if (!rfid.PICC_IsNewCardPresent()) return;
+  if (!rfid.PICC_ReadCardSerial()) return;
+
+  // Pobierz ID
+  String content = "";
+  for (byte i = 0; i < rfid.uid.size; i++) {
+    content.concat(String(rfid.uid.uidByte[i] < 0x10 ? " 0" : " "));
+    content.concat(String(rfid.uid.uidByte[i], HEX));
+  }
+  content.toUpperCase();
+  String idKarty = content.substring(1);
+
+  Serial.print(F("Karta: "));
+  Serial.println(idKarty);
+
+  // --- LOGIKA DOSTĘPU ---
+  if (idKarty == "1B 5B 83 32") {
+    
+    // Wyślij do ESP32
+    espSerial.print("SUKCES|");
+    espSerial.println(idKarty);
+    Serial.println(F("→ Wysłano SUKCES do ESP32"));
+    
+    // Obsługa lokalna
+    pokazKomunikat("DOSTEP", "PRZYZNANY");
+    display.invertDisplay(true); 
+    
+    digitalWrite(LED_ZIELONY, LOW);
+    dzwiekSukces();
+    
+    delay(2000); 
+    
+    display.invertDisplay(false);
+    digitalWrite(LED_ZIELONY, HIGH);
+  }
+  else {
+    // Wyślij do ESP32
+    espSerial.print("ODMOWA|");
+    espSerial.println(idKarty);
+    Serial.println(F("→ Wysłano ODMOWA do ESP32"));
+    
+    // Obsługa lokalna
+    pokazKomunikat("ZAKAZ", "DOSTEPU!");
+    
+    digitalWrite(LED_CZERWONY, LOW);
+    dzwiekBlad();
+    
+    delay(2000);
+    digitalWrite(LED_CZERWONY, HIGH);
+  }
+
+  // Powrót do stanu czuwania
+  pokazKomunikat("PRZYLOZ", "KARTE...");
+  rfid.PICC_HaltA();
+  rfid.PCD_StopCrypto1();
+}
