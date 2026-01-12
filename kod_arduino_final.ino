@@ -32,7 +32,7 @@ SoftwareSerial espSerial(2, 4);
 
 // --- FUNKCJE DŹWIĘKOWE I EKRANOWE ---
 
-void pokazKomunikat(String linia1, String linia2 = "") {
+void pokazKomunikat(const char* linia1, const char* linia2 = "") {
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
@@ -44,7 +44,7 @@ void pokazKomunikat(String linia1, String linia2 = "") {
   display.setCursor(0, 20);
   display.println(linia1);
   
-  if (linia2 != "") {
+  if (linia2 != NULL && linia2[0] != '\0') {
     display.setTextSize(1);
     display.setCursor(0, 45);
     display.println(linia2);
@@ -53,34 +53,45 @@ void pokazKomunikat(String linia1, String linia2 = "") {
 }
 
 void dzwiekSukces() {
-  tone(BUZZER, 659); delay(100);
-  tone(BUZZER, 784); delay(100);
+  tone(BUZZER, 659); 
+  delay(100);
+  tone(BUZZER, 784); 
+  delay(100);
   noTone(BUZZER);
-  PORTD |= (1 << PD3); // Buzzer HIGH
+  pinMode(BUZZER, OUTPUT);      
+  digitalWrite(BUZZER, HIGH);     
 }
 
 void dzwiekBlad() {
-  tone(BUZZER, 200); delay(250);
+  tone(BUZZER, 200); 
+  delay(250);
   noTone(BUZZER);
-  PORTD |= (1 << PD3); // Buzzer HIGH
+  pinMode(BUZZER, OUTPUT);      
+  digitalWrite(BUZZER, HIGH);     
 }
 
 
+
 void otworzDrzwi() {
-  // Symulacja otwarcia drzwi za pomocą diody (PWM)
-  // Powoli zwiększaj jasność diody (symulacja otwierania)
-  for (int brightness = 0; brightness <= 255; brightness += 5) {
-    analogWrite(SERVO, brightness);
-    delay(30); // Zmienia jasność co 30ms
-  }
+  pinMode(SERVO, OUTPUT);
   
-  delay(5000); // Czekaj 5 sekund z otwartymi drzwiami
-  
-  // Powoli zmniejszaj jasność diody (symulacja zamykania)
+  // Powoli zwiększaj jasność (fade-in)
   for (int brightness = 255; brightness >= 0; brightness -= 5) {
     analogWrite(SERVO, brightness);
-    delay(30);
+    delay(20);
   }
+  
+  delay(5000); // Czekaj z pełną jasnością
+  
+  // Powoli zmniejszaj jasność (fade-out)
+  for (int brightness = 0; brightness <= 255; brightness += 5) {
+    analogWrite(SERVO, brightness);
+    delay(20);  
+  }
+  
+  digitalWrite(SERVO, HIGH);  
+
+  
   // Kod dla faktycznego serwa 
   /*
   myServo.attach(6);
@@ -143,21 +154,28 @@ void loop() {
     
     // Obsługa lokalna
     pokazKomunikat("DOSTEP", "PRZYZNANY");
-    display.invertDisplay(true); 
     
     // LED ZIELONY ON (LOW) przez rejestr
     PORTD &= ~(1 << PD5);
     
     dzwiekSukces();
     
+    delay(2000);
+    pokazKomunikat("OTWIERANIE", "DRZWI...");
+
+    
+    PORTD |= (1 << PD5); // led zielony off przez rejestr (high)
+    pokazKomunikat("OTWIERANIE", "DRZWI...");
+    
+   
+    delay(500);
+
     otworzDrzwi();
 
-    delay(2000); 
+   
     
-    display.invertDisplay(false);
-    
-    // LED ZIELONY OFF (HIGH) przez rejestr
-    PORTD |= (1 << PD5);
+     
+   
   }
   else {
     // Wyślij do ESP32

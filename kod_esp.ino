@@ -13,6 +13,8 @@ RtcDS1302<ThreeWire> Rtc(myWire);
 #define RXD2 16
 #define TXD2 17
 
+#define countof(a) (sizeof(a) / sizeof(a[0]))
+
 void setup() {
   Serial.begin(9600);
   delay(100);
@@ -25,15 +27,35 @@ void setup() {
 
   // --- KONFIGURACJA RTC ---
   Rtc.Begin();
-  Rtc.SetIsWriteProtected(false);
-  Rtc.SetIsRunning(true);
   
-  // ZAWSZE ustaw czas kompilacji
   RtcDateTime compiled = RtcDateTime(__DATE__, __TIME__);
-  Rtc.SetDateTime(compiled);
   
-  Serial.print("Czas ustawiony na: ");
-  printDateTime(compiled);
+  // ✅ Sprawdź czy RTC wymaga inicjalizacji
+  if (!Rtc.IsDateTimeValid()) {
+    Serial.println("⚠ RTC utraciło dane - ustawiam czas kompilacji");
+    
+    Rtc.SetIsWriteProtected(false);
+    Rtc.SetDateTime(compiled);
+    Rtc.SetIsRunning(true);
+  }
+  else {
+    RtcDateTime now = Rtc.GetDateTime();
+    
+    // ✅ Jeśli czas RTC jest starszy niż kompilacja, zaktualizuj
+    if (now < compiled) {
+      Serial.println("⚠ RTC ma starą datę - aktualizuję");
+      Rtc.SetIsWriteProtected(false);
+      Rtc.SetDateTime(compiled);
+      Rtc.SetIsRunning(true);
+    }
+    else {
+      Serial.println("✓ RTC działa poprawnie");
+    }
+  }
+  
+  RtcDateTime currentTime = Rtc.GetDateTime();
+  Serial.print("Aktualny czas: ");
+  printDateTime(currentTime);
   
   Serial.println("\nNasłuchuję danych z Arduino...");
   Serial.println("=================================\n");
@@ -85,5 +107,3 @@ void printDateTime(const RtcDateTime& dt) {
   
   Serial.println(datestring);
 }
-
-#define countof(a) (sizeof(a) / sizeof(a[0]))
