@@ -4,6 +4,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <SoftwareSerial.h>
+//#include <Servo.h>
 
 // --- KONFIGURACJA EKRANU ---
 #define SCREEN_WIDTH 128
@@ -14,8 +15,7 @@
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 // --- KONFIGURACJA PINÓW ---
-const int LED_CZERWONY = 6;  // PD6
-const int LED_ZIELONY = 5;   // PD5
+const int SERVO = 6;  // PD6
 const int BUZZER = 3;        // PD3
 
 // RFID
@@ -25,11 +25,14 @@ const int SS_PIN = 10;
 MFRC522 rfid(SS_PIN, RST_PIN);
 
 // --- KOMUNIKACJA Z ESP32 ---
-SoftwareSerial espSerial(2, 4); 
+SoftwareSerial espSerial(2, 4);
+
+// --- SERWO ---
+//Servo myServo;
 
 // --- FUNKCJE DŹWIĘKOWE I EKRANOWE ---
 
-void pokazKomunikat(String linia1, String linia2 = "") {
+void pokazKomunikat(const char* linia1, const char* linia2 = "") {
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
@@ -41,7 +44,7 @@ void pokazKomunikat(String linia1, String linia2 = "") {
   display.setCursor(0, 20);
   display.println(linia1);
   
-  if (linia2 != "") {
+  if (linia2 != NULL && linia2[0] != '\0') {
     display.setTextSize(1);
     display.setCursor(0, 45);
     display.println(linia2);
@@ -50,25 +53,61 @@ void pokazKomunikat(String linia1, String linia2 = "") {
 }
 
 void dzwiekSukces() {
-  tone(BUZZER, 659); delay(100);
-  tone(BUZZER, 784); delay(100);
+  tone(BUZZER, 659); 
+  delay(100);
+  tone(BUZZER, 784); 
+  delay(100);
   noTone(BUZZER);
-  PORTD |= (1 << PD3); // Buzzer HIGH
+  pinMode(BUZZER, OUTPUT);      
+  digitalWrite(BUZZER, HIGH);     
 }
 
 void dzwiekBlad() {
-  tone(BUZZER, 200); delay(250);
+  tone(BUZZER, 200); 
+  delay(250);
   noTone(BUZZER);
-  PORTD |= (1 << PD3); // Buzzer HIGH
+  pinMode(BUZZER, OUTPUT);      
+  digitalWrite(BUZZER, HIGH);     
 }
 
+
+
+void otworzDrzwi() {
+  pinMode(SERVO, OUTPUT);
+  
+  // Powoli zwiększaj jasność (fade-in)
+  for (int brightness = 255; brightness >= 0; brightness -= 5) {
+    analogWrite(SERVO, brightness);
+    delay(20);
+  }
+  
+  delay(5000); // Czekaj z pełną jasnością
+  
+  // Powoli zmniejszaj jasność (fade-out)
+  for (int brightness = 0; brightness <= 255; brightness += 5) {
+    analogWrite(SERVO, brightness);
+    delay(20);  
+  }
+  
+  digitalWrite(SERVO, HIGH);  
+
+  
+  // Kod dla faktycznego serwa 
+  /*
+  myServo.attach(6);
+  myServo.write(90);     // Otwórz na 90°
+  delay(5000);
+  myServo.write(0);      // Zamknij na 0°
+  myServo.detach();
+  */
+}
 void setup() {
   // Konfiguracja pinów jako OUTPUT przez rejestry
-  // PD6 (pin 6), PD5 (pin 5), PD3 (pin 3)
-  DDRD |= (1 << DDD6) | (1 << DDD5) | (1 << DDD3);
+  //PD5 (pin 5), PD3 (pin 3)
+  DDRD |= (1 << DDD5) | (1 << DDD3);
   
   // Ustaw wszystkie na HIGH (wyłączone)
-  PORTD |= (1 << PD6) | (1 << PD5) | (1 << PD3);
+  PORTD |= (1 << PD5) | (1 << PD3);
 
   Serial.begin(9600);     
   delay(100);
@@ -115,19 +154,28 @@ void loop() {
     
     // Obsługa lokalna
     pokazKomunikat("DOSTEP", "PRZYZNANY");
-    display.invertDisplay(true); 
     
     // LED ZIELONY ON (LOW) przez rejestr
     PORTD &= ~(1 << PD5);
     
     dzwiekSukces();
     
-    delay(2000); 
+    delay(2000);
+    pokazKomunikat("OTWIERANIE", "DRZWI...");
+
     
-    display.invertDisplay(false);
+    PORTD |= (1 << PD5); // led zielony off przez rejestr (high)
+    pokazKomunikat("OTWIERANIE", "DRZWI...");
     
-    // LED ZIELONY OFF (HIGH) przez rejestr
-    PORTD |= (1 << PD5);
+   
+    delay(500);
+
+    otworzDrzwi();
+
+   
+    
+     
+   
   }
   else {
     // Wyślij do ESP32
@@ -137,16 +185,11 @@ void loop() {
     
     // Obsługa lokalna
     pokazKomunikat("ZAKAZ", "DOSTEPU!");
-    
-    // LED CZERWONY ON (LOW) przez rejestr
-    PORTD &= ~(1 << PD6);
-    
+ 
     dzwiekBlad();
     
     delay(2000);
     
-    // LED CZERWONY OFF (HIGH) przez rejestr
-    PORTD |= (1 << PD6);
   }
 
   // Powrót do stanu czuwania
